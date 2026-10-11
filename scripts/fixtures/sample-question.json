@@ -1,0 +1,21 @@
+{
+  "questions": [
+    {
+      "sourceName": "User JSON sample",
+      "sourceUrl": null,
+      "domain": "CRAFT_AND_STRUCTURE",
+      "subSkill": "WORDS_IN_CONTEXT",
+      "difficulty": "EASY",
+      "passage": "The Bentonville square keeps its brick storefronts, and on warm evenings the windows stay lit long after the last shop door is locked. Residents call that glow a courtesy.",
+      "prompt": "As used in the sample text, what does the word \"courtesy\" most nearly mean?",
+      "options": [
+        { "id": "A", "text": "A polite kindness" },
+        { "id": "B", "text": "A legal requirement" },
+        { "id": "C", "text": "A bright color" },
+        { "id": "D", "text": "A closed road" }
+      ],
+      "correctOption": "A",
+      "staticRationale": "The lit windows are described as a kindness to people still on the square, so courtesy means a polite kindness."
+    }
+  ]
+}
