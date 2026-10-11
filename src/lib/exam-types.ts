@@ -33,6 +33,8 @@ export type ExamSession = {
   totalQuestions: number
   totalTimeMinutes: number
   isAdaptiveFocus: boolean
+  isPaused: boolean
+  resumeIndex: number
   scoreRaw: number | null
   scoreScaled: number | null
   questions: ExamQuestion[]
@@ -55,6 +57,7 @@ export type StudioSession = {
   totalQuestions: number
   isAdaptiveFocus: boolean
   currentModule: number
+  isPaused: boolean
   createdAt: string
   completedAt: string | null
 }

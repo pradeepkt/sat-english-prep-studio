@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { BookOpen, Clock, Flag, MapPin, PenLine, Target } from "lucide-react"
+import { BookOpen, Clock, Flag, MapPin, PenLine, RefreshCw, Target } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -37,6 +37,8 @@ export function StudioHome() {
   const [domain, setDomain] = useState<Domain | "ALL">("ALL")
   const [difficulty, setDifficulty] = useState<Difficulty | "MIXED">("MIXED")
   const [count, setCount] = useState(6)
+  const [rescanning, setRescanning] = useState(false)
+  const [rescanMessage, setRescanMessage] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -55,6 +57,28 @@ export function StudioHome() {
   useEffect(() => {
     void load()
   }, [])
+
+  async function rescan() {
+    setRescanning(true)
+    setRescanMessage(null)
+    setError(null)
+    try {
+      const response = await fetch("/api/sources/rescan", { method: "POST" })
+      const body = await response.json()
+      if (!response.ok) throw new Error(body.error ?? "The sources could not be rescanned.")
+      const created = Number(body.created ?? 0)
+      setRescanMessage(
+        created === 1
+          ? "Added 1 new question. Existing questions were kept."
+          : `Added ${created} new questions. Existing questions were kept.`,
+      )
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The sources could not be rescanned.")
+    } finally {
+      setRescanning(false)
+    }
+  }
 
   async function start(mode: "full" | "adaptive" | "drill") {
     setStarting(mode)
@@ -79,6 +103,25 @@ export function StudioHome() {
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-8 sm:px-6 sm:py-12">
+      <div className="flex flex-col gap-3 rounded-xl border border-border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-medium">Question sources</p>
+          <p className="text-sm text-muted-foreground">
+            Rescan the studio sources and add any questions that are not in the bank yet.
+          </p>
+        </div>
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <Button data-testid="rescan" variant="outline" disabled={rescanning} onClick={() => void rescan()}>
+            <RefreshCw />
+            {rescanning ? "Rescanning sources…" : "Rescan sources"}
+          </Button>
+          {rescanMessage && (
+            <p data-testid="rescan-result" className="text-sm text-muted-foreground">
+              {rescanMessage}
+            </p>
+          )}
+        </div>
+      </div>
       <header className="flex flex-col gap-4 border-b border-border pb-8 sm:flex-row sm:items-end sm:justify-between">
         <div className="max-w-2xl">
           <p className="mb-2 flex items-center gap-2 text-sm font-medium tracking-wide text-primary uppercase">
@@ -154,7 +197,7 @@ export function StudioHome() {
           <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
             <p>One short passage, one question, choices A through D.</p>
             <p>Strike a choice, highlight a line, or flag the item and come back from the review screen.</p>
-            <p>Save and exit marks the session abandoned. It is not scored.</p>
+            <p>Pause freezes the clock. Close the test and continue later from the same answers and time. The clock never ends the session.</p>
           </CardContent>
         </Card>
       </section>
@@ -224,7 +267,7 @@ export function StudioHome() {
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant={session.status === "COMPLETED" ? "default" : "outline"}>
-                      {STATUS_LABEL[session.status]}
+                      {session.isPaused ? "Paused" : STATUS_LABEL[session.status]}
                     </Badge>
                     {session.scoreScaled != null && (
                       <Badge variant="secondary">Projected {session.scoreScaled}</Badge>
@@ -235,8 +278,8 @@ export function StudioHome() {
                       </span>
                     )}
                     {session.status === "IN_PROGRESS" && (
-                      <Button nativeButton={false} render={<Link href={`/exam/${session.id}`} />} variant="outline" size="sm">
-                        <Clock /> Resume
+                      <Button data-testid="continue-session" nativeButton={false} render={<Link href={`/exam/${session.id}`} />} variant="outline" size="sm">
+                        <Clock /> {session.isPaused ? "Continue" : "Resume"}
                       </Button>
                     )}
                     {session.status === "COMPLETED" && (

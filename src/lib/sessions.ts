@@ -81,6 +81,8 @@ function presentSession(
     totalQuestions: session.totalQuestions,
     totalTimeMinutes: session.totalTimeMinutes,
     isAdaptiveFocus: session.isAdaptiveFocus,
+    isPaused: session.isPaused,
+    resumeIndex: session.resumeIndex,
     scoreRaw: review ? session.scoreRaw : null,
     scoreScaled: review ? session.scoreScaled : null,
     questions,
@@ -120,6 +122,7 @@ export async function getStudio() {
       totalQuestions: session.totalQuestions,
       isAdaptiveFocus: session.isAdaptiveFocus,
       currentModule: session.currentModule,
+      isPaused: session.isPaused,
       createdAt: session.createdAt.toISOString(),
       completedAt: session.completedAt?.toISOString() ?? null,
     })),
@@ -228,6 +231,8 @@ export async function getSession(id: string, review: boolean) {
 
 type PatchBody = {
   timeRemainingSec?: number
+  isPaused?: boolean
+  resumeIndex?: number
   questions?: Array<{
     id: string
     selectedOption?: string | null
@@ -243,11 +248,16 @@ export async function patchSession(id: string, body: PatchBody) {
   if (session.status !== "IN_PROGRESS") {
     throw new Error("This session is no longer in progress.")
   }
+  const sessionData: Prisma.TestSessionUpdateInput = {}
   if (typeof body.timeRemainingSec === "number" && Number.isFinite(body.timeRemainingSec)) {
-    await prisma.testSession.update({
-      where: { id },
-      data: { timeRemainingSec: Math.max(0, Math.round(body.timeRemainingSec)) },
-    })
+    sessionData.timeRemainingSec = Math.max(0, Math.round(body.timeRemainingSec))
+  }
+  if (typeof body.isPaused === "boolean") sessionData.isPaused = body.isPaused
+  if (typeof body.resumeIndex === "number" && Number.isFinite(body.resumeIndex)) {
+    sessionData.resumeIndex = Math.max(0, Math.round(body.resumeIndex))
+  }
+  if (Object.keys(sessionData).length) {
+    await prisma.testSession.update({ where: { id }, data: sessionData })
   }
   if (body.questions?.length) {
     const owned = await prisma.testQuestion.findMany({
@@ -370,7 +380,7 @@ export async function submitModule(id: string) {
     })
     await prisma.testSession.update({
       where: { id },
-      data: { currentModule: 2, timeRemainingSec: MODULE_SECONDS },
+      data: { currentModule: 2, timeRemainingSec: MODULE_SECONDS, isPaused: false, resumeIndex: 0 },
     })
     return { advanced: true as const, currentModule: 2 }
   }

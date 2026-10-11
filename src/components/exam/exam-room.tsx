@@ -55,7 +55,10 @@ export function ExamRoom() {
   const [navOpen, setNavOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [timeLeft, setTimeLeft] = useState(0)
+  const [paused, setPaused] = useState(false)
   const timeRef = useRef(0)
+  const pausedRef = useRef(false)
+  const timingRef = useRef(true)
   const questionsRef = useRef<ExamQuestion[]>([])
   const indexRef = useRef(0)
   const enteredAt = useRef(Date.now())
@@ -93,9 +96,17 @@ export function ExamRoom() {
       return
     }
     setSession(next)
-    setIndex(0)
+    const startIndex = Math.min(
+      Math.max(0, next.resumeIndex ?? 0),
+      Math.max(0, next.questions.length - 1),
+    )
+    setIndex(startIndex)
+    indexRef.current = startIndex
     timeRef.current = next.timeRemainingSec
     setTimeLeft(next.timeRemainingSec)
+    pausedRef.current = next.isPaused
+    timingRef.current = !next.isPaused
+    setPaused(next.isPaused)
     setPhase("test")
   }
 
@@ -106,7 +117,7 @@ export function ExamRoom() {
 
   function stampTime(questions: ExamQuestion[], questionIndex: number) {
     const current = questions[questionIndex]
-    if (!current) return questions
+    if (!current || !timingRef.current) return questions
     const extra = Math.round((Date.now() - enteredAt.current) / 1000)
     enteredAt.current = Date.now()
     return questions.map((item, itemIndex) =>
@@ -131,11 +142,13 @@ export function ExamRoom() {
     const questions = stampTime(questionsRef.current, indexRef.current)
     questionsRef.current = questions
     setSession((current) => (current ? { ...current, questions } : current))
-    await fetch(`/api/sessions/${sessionId}`, {
+    const response = await fetch(`/api/sessions/${sessionId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         timeRemainingSec: includeTime ? timeRef.current : undefined,
+        isPaused: pausedRef.current,
+        resumeIndex: indexRef.current,
         questions: questions.map((item) => ({
           id: item.id,
           selectedOption: item.selectedOption,
@@ -145,6 +158,10 @@ export function ExamRoom() {
         })),
       }),
     })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.error ?? "The session could not be saved.")
+    }
   }
 
   async function submitModule() {
@@ -172,14 +189,11 @@ export function ExamRoom() {
   }
 
   useEffect(() => {
-    if (phase !== "test") return
+    if (phase !== "test" || paused) return
     const timer = window.setInterval(() => {
+      if (timeRef.current <= 0) return
       timeRef.current = Math.max(0, timeRef.current - 1)
       setTimeLeft(timeRef.current)
-      if (timeRef.current === 0) {
-        window.clearInterval(timer)
-        void submitModule()
-      }
     }, 1000)
     const save = window.setInterval(() => {
       void persist()
@@ -189,7 +203,37 @@ export function ExamRoom() {
       window.clearInterval(save)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, session?.currentModule, sessionId])
+  }, [phase, paused, session?.currentModule, sessionId])
+
+  async function pauseClock() {
+    if (pausedRef.current) {
+      await persist()
+      return
+    }
+    await persist()
+    timingRef.current = false
+    pausedRef.current = true
+    setPaused(true)
+    await persist()
+  }
+
+  async function resumeClock() {
+    timingRef.current = true
+    enteredAt.current = Date.now()
+    pausedRef.current = false
+    setPaused(false)
+    await persist()
+  }
+
+  async function closeForLater() {
+    setBusy(true)
+    try {
+      await pauseClock()
+      router.push("/")
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const unanswered = useMemo(
     () => session?.questions.filter((item) => !item.selectedOption).length ?? 0,
@@ -197,27 +241,7 @@ export function ExamRoom() {
   )
 
   async function leave() {
-    setBusy(true)
-    try {
-      const questions = stampTime(questionsRef.current, indexRef.current)
-      await fetch(`/api/sessions/${sessionId}/abandon`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          timeRemainingSec: timeRef.current,
-          questions: questions.map((item) => ({
-            id: item.id,
-            selectedOption: item.selectedOption,
-            isFlaggedForReview: item.isFlaggedForReview,
-            eliminatedOptions: item.eliminatedOptions,
-            timeSpentSeconds: item.timeSpentSeconds,
-          })),
-        }),
-      })
-      router.push("/")
-    } finally {
-      setBusy(false)
-    }
+    await closeForLater()
   }
 
   if (phase === "loading") {
@@ -374,8 +398,17 @@ export function ExamRoom() {
                 </Button>
               }
             />
-            <TooltipContent>Hide or show the module clock</TooltipContent>
+            <TooltipContent>Hide or show the module clock. The clock never ends the test.</TooltipContent>
           </Tooltip>
+          {paused ? (
+            <Button data-testid="resume" size="sm" onClick={() => void resumeClock()}>
+              Continue
+            </Button>
+          ) : (
+            <Button data-testid="pause" size="sm" variant="outline" onClick={() => void pauseClock()}>
+              Pause
+            </Button>
+          )}
           <Button
             data-testid="strike-mode"
             variant={ui.strikethroughMode ? "default" : "ghost"}
@@ -394,14 +427,24 @@ export function ExamRoom() {
             <Highlighter />
             <span className="hidden sm:inline">Highlight</span>
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => setLeaveOpen(true)}>
+          <Button data-testid="close-session" variant="ghost" size="sm" onClick={() => setLeaveOpen(true)}>
             <X />
-            <span className="hidden sm:inline">Save and exit</span>
+            <span className="hidden sm:inline">Close</span>
           </Button>
         </div>
       </header>
 
-      {urgent && ui.showTimer && (
+      {paused && (
+        <p data-testid="paused-banner" className="bg-[#f3e2a8] px-4 py-1 text-center text-sm">
+          Paused at {formatClock(timeLeft)}. The clock stays here until you continue.
+        </p>
+      )}
+      {!paused && timeLeft === 0 && ui.showTimer && (
+        <p data-testid="time-up" className="bg-[#f3e2a8] px-4 py-1 text-center text-sm">
+          The clock is at 0:00. It will not end the test. Finish when you are ready.
+        </p>
+      )}
+      {urgent && ui.showTimer && !paused && (
         <p className="bg-[#f3e2a8] px-4 py-1 text-center text-sm">
           {moduleBudget > 300 ? "Less than five minutes remain in this module." : "Less than a minute remains in this drill."}
         </p>
@@ -536,9 +579,9 @@ export function ExamRoom() {
       <Dialog open={leaveOpen} onOpenChange={setLeaveOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Leave this module?</DialogTitle>
+            <DialogTitle>Close this test?</DialogTitle>
             <DialogDescription>
-              The session will be marked abandoned and will not be scored. You can start a new one
+              The clock freezes where it is. Your answers stay saved, and you can continue later
               from the studio.
             </DialogDescription>
           </DialogHeader>
@@ -547,8 +590,8 @@ export function ExamRoom() {
             <Button variant="outline" onClick={() => setLeaveOpen(false)}>
               Keep working
             </Button>
-            <Button data-testid="confirm-exit" disabled={busy} onClick={() => void leave()}>
-              Abandon session
+            <Button data-testid="confirm-close" disabled={busy} onClick={() => void leave()}>
+              Close for now
             </Button>
           </DialogFooter>
         </DialogContent>
