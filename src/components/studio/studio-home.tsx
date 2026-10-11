@@ -43,8 +43,8 @@ export function StudioHome() {
   const [clearOpen, setClearOpen] = useState(false)
   const [clearing, setClearing] = useState(false)
 
-  async function load() {
-    setLoading(true)
+  async function load(options?: { quiet?: boolean }) {
+    if (!options?.quiet) setLoading(true)
     setError(null)
     try {
       const response = await fetch("/api/studio")
@@ -53,7 +53,7 @@ export function StudioHome() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "The studio could not load.")
     } finally {
-      setLoading(false)
+      if (!options?.quiet) setLoading(false)
     }
   }
 
@@ -111,11 +111,8 @@ export function StudioHome() {
       const response = await fetch(`/api/sessions/${id}`, { method: "DELETE" })
       const body = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(body.error ?? "The session could not be deleted.")
-      setData((current) =>
-        current
-          ? { ...current, sessions: current.sessions.filter((session) => session.id !== id) }
-          : current,
-      )
+      // Refetch so older sessions can fill the recent list (studio returns take: 8).
+      await load({ quiet: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : "The session could not be deleted.")
     } finally {
@@ -130,8 +127,8 @@ export function StudioHome() {
       const response = await fetch("/api/sessions", { method: "DELETE" })
       const body = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(body.error ?? "Sessions could not be cleared.")
-      setData((current) => (current ? { ...current, sessions: [] } : current))
       setClearOpen(false)
+      await load({ quiet: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sessions could not be cleared.")
     } finally {
