@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { BookOpen, Clock, Flag, MapPin, PenLine, RefreshCw, Target } from "lucide-react"
+import { BookOpen, Clock, Flag, MapPin, PenLine, RefreshCw, Target, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -39,6 +39,9 @@ export function StudioHome() {
   const [count, setCount] = useState(6)
   const [rescanning, setRescanning] = useState(false)
   const [rescanMessage, setRescanMessage] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [clearOpen, setClearOpen] = useState(false)
+  const [clearing, setClearing] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -98,6 +101,41 @@ export function StudioHome() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "The session could not start.")
       setStarting(null)
+    }
+  }
+
+  async function removeSession(id: string) {
+    setDeletingId(id)
+    setError(null)
+    try {
+      const response = await fetch(`/api/sessions/${id}`, { method: "DELETE" })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.error ?? "The session could not be deleted.")
+      setData((current) =>
+        current
+          ? { ...current, sessions: current.sessions.filter((session) => session.id !== id) }
+          : current,
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The session could not be deleted.")
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  async function clearSessions() {
+    setClearing(true)
+    setError(null)
+    try {
+      const response = await fetch("/api/sessions", { method: "DELETE" })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.error ?? "Sessions could not be cleared.")
+      setData((current) => (current ? { ...current, sessions: [] } : current))
+      setClearOpen(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sessions could not be cleared.")
+    } finally {
+      setClearing(false)
     }
   }
 
@@ -243,7 +281,27 @@ export function StudioHome() {
       </section>
 
       <section>
-        <h2 className="mb-4 font-serif text-2xl">Recent sessions</h2>
+        <div className="mb-4 flex items-end justify-between gap-4">
+          <div>
+            <h2 className="font-serif text-2xl">Recent sessions</h2>
+            <p className="text-sm text-muted-foreground">
+              Remove a session anytime. Clearing the list does not change the question bank or
+              proficiency.
+            </p>
+          </div>
+          {Boolean(data?.sessions.length) && (
+            <Button
+              data-testid="clear-sessions"
+              variant="outline"
+              size="sm"
+              disabled={clearing || Boolean(deletingId)}
+              onClick={() => setClearOpen(true)}
+            >
+              <Trash2 />
+              Clear all
+            </Button>
+          )}
+        </div>
         {loading ? (
           <div className="h-24 animate-pulse rounded-xl bg-muted" />
         ) : !data?.sessions.length ? (
@@ -287,6 +345,19 @@ export function StudioHome() {
                         <Flag /> Results
                       </Button>
                     )}
+                    <Button
+                      data-testid={`delete-session-${session.id}`}
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={`Delete ${session.title}`}
+                      disabled={deletingId === session.id || clearing}
+                      onClick={() => void removeSession(session.id)}
+                    >
+                      <Trash2 />
+                      <span className="sr-only">
+                        {deletingId === session.id ? "Deleting…" : "Delete"}
+                      </span>
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -294,6 +365,31 @@ export function StudioHome() {
           </div>
         )}
       </section>
+
+      <Dialog open={clearOpen} onOpenChange={(open) => !clearing && setClearOpen(open)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Clear recent sessions?</DialogTitle>
+            <DialogDescription>
+              This permanently deletes every practice session and its answers. The question bank and
+              proficiency scores stay as they are.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" disabled={clearing} onClick={() => setClearOpen(false)}>
+              Keep sessions
+            </Button>
+            <Button
+              data-testid="confirm-clear-sessions"
+              variant="destructive"
+              disabled={clearing}
+              onClick={() => void clearSessions()}
+            >
+              {clearing ? "Clearing…" : "Clear all sessions"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={drillOpen} onOpenChange={setDrillOpen}>
         <DialogContent className="sm:max-w-md">

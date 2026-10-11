@@ -1,6 +1,6 @@
 import { connection } from "next/server"
 import type { Difficulty, Domain } from "@/lib/labels"
-import { createPracticeSession } from "@/lib/sessions"
+import { clearAllSessions, createPracticeSession } from "@/lib/sessions"
 
 export async function POST(request: Request) {
   await connection()
@@ -24,5 +24,16 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "The session could not be started."
     return Response.json({ error: message }, { status: 400 })
+  }
+}
+
+export async function DELETE() {
+  await connection()
+  try {
+    const result = await clearAllSessions()
+    return Response.json(result)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Sessions could not be cleared."
+    return Response.json({ error: message }, { status: 500 })
   }
 }

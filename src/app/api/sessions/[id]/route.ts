@@ -1,5 +1,5 @@
 import { connection } from "next/server"
-import { getSession, patchSession } from "@/lib/sessions"
+import { deleteSession, getSession, patchSession } from "@/lib/sessions"
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   await connection()
@@ -27,5 +27,21 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   } catch (error) {
     const message = error instanceof Error ? error.message : "The answer could not be saved."
     return Response.json({ error: message }, { status: 400 })
+  }
+}
+
+export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
+  await connection()
+  try {
+    const { id } = await context.params
+    if (!id?.trim()) {
+      return Response.json({ error: "Session id is required." }, { status: 400 })
+    }
+    const result = await deleteSession(id)
+    if (!result) return Response.json({ error: "Session not found." }, { status: 404 })
+    return Response.json(result)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "The session could not be deleted."
+    return Response.json({ error: message }, { status: 500 })
   }
 }

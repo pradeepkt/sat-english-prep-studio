@@ -419,6 +419,23 @@ export async function abandonSession(id: string, body: PatchBody) {
   return { abandoned: true }
 }
 
+/** Deletes a practice session and its TestQuestion rows. Leaves the question bank and proficiency untouched. */
+export async function deleteSession(id: string) {
+  const session = await prisma.testSession.findUnique({
+    where: { id },
+    select: { id: true },
+  })
+  if (!session) return null
+  await prisma.testSession.delete({ where: { id } })
+  return { deleted: true as const, id }
+}
+
+/** Clears every TestSession. Question bank and StudentDomainProficiency are preserved. */
+export async function clearAllSessions() {
+  const result = await prisma.testSession.deleteMany({})
+  return { deleted: result.count }
+}
+
 export async function explainMistake(sessionId: string, testQuestionId: string) {
   const row = await prisma.testQuestion.findFirst({
     where: { id: testQuestionId, testSessionId: sessionId },
